@@ -25,14 +25,17 @@ if __name__ == '__main__':
   (
     Provider
       .init()
+      .print('Setting range...')
       .set_range(start_time, end_time)
       .print(f'Start block: {Provider.start_block}, End block: {Provider.end_block}')
+      .print('Getting transactions...')
       .get_txn_in_range(Extracter.addresses())
-      .print(len(Extracter.addresses()))
+      .print('Setting range...')
       .set_range(GENESIS_TIMESTAMP, new_wallet_time)
       .print(f'Start block: {Provider.start_block}, End block: {Provider.end_block}')
+      .print('Checking transactions...')
       .txn_exist_in_range(Extracter.addresses())
-      .print(f'Total time: {time.time() - start}')
+      .print(f'Execution time: {time.time() - start}')
   )
 
   Extracter.write_addresses()

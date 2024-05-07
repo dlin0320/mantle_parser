@@ -39,7 +39,8 @@ class Extracter:
   def report(cls):
     unique_count = len(cls.addresses())
     new_count = len([value for value in cls.addresses().values() if value == True])
-    ic(f"Unique addresses: {unique_count}, New addresses: {new_count}")
+    report = f"Unique addresses: {unique_count}, New addresses: {new_count}"
+    ic(report)
 
   @classmethod
   def write_addresses(cls):

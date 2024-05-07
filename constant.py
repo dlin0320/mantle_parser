@@ -1,7 +1,7 @@
-from dotenv import load_dotenv
+import dotenv
 import os
 
-load_dotenv()
+dotenv.load_dotenv()
 
 API_KEYS = os.environ.get('API_KEYS').split(',')
 

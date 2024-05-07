@@ -16,24 +16,28 @@ import os
 Provide raw transactions from mantle api
 '''
 class Provider:
-  _logger = get_logger(__name__)
-
   class Status(Enum):
     IDLE = 'idle'
     RUNNING = 'running'
 
     def transition(self):
+      provider = ''
       if self == self.IDLE:
-        Provider._logger.info('Provider started')
         Provider.status = self.RUNNING
+        provider = f'{self} -> {Provider.status}'
+        ic(provider)
         Provider._executor.submit(Provider._start)
         Provider._wait()
       elif self == self.RUNNING:
-        Provider._logger.info('Provider stopped')
         Provider.status = self.IDLE
+        provider = f'{self} -> {Provider.status}'
+        ic(provider)
         Provider._reset()
-      else:
-        return self
+
+  _logger = get_logger(__name__)
+  status = Status.IDLE
+  start_block = 0
+  end_block = 'latest'
 
   @classmethod
   def _speedup(cls, factor=10):
@@ -53,10 +57,6 @@ class Provider:
   
   @classmethod
   def _reset(cls):
-    cls.status = cls.Status.IDLE
-    cls.start_block = 0
-    cls.end_block = 'latest'
-
     cls._keys = cycle(API_KEYS)
     cls._queue = queue.PriorityQueue()
     cls._max_workers = os.cpu_count()
@@ -65,20 +65,21 @@ class Provider:
     cls._futures = list[Future]()
     cls._pause = MIN_PAUSE
     cls._count = 0
-    cls.status = cls.Status.IDLE
     cls._action_list = [
-    'txlist', 
-    'txlistinternal', 
-    'tokentx', 
-    'tokennfttx', 
-    'token1155tx'
-  ]
+      'txlist', 
+      'txlistinternal', 
+      'tokentx', 
+      'tokennfttx', 
+      'token1155tx'
+    ]
   
   @classmethod
+  @logging()
   def _retry(cls, *args):
     return cls._enqueue(0, *args)
   
   @classmethod
+  @logging()
   def _enqueue(cls, priority, *args):
     cls._count += 1
     item = (priority, cls._count, *args)
@@ -87,19 +88,30 @@ class Provider:
   @classmethod
   @logging()
   def _start(cls):
+    while not cls._queue.empty():
+      cls._semaphore.acquire()
+      item = cls._queue.get()
+      _, _, func, *args = item
+      future = cls._executor.submit(func, *args)
+      cls._futures.append(future)
+
+      cls._count += 1
+      if cls._count % 6 == 0:
+        cls._speedup()
+
+      time.sleep(cls._pause)
+
+  @classmethod
+  @logging()
+  def _wait(cls) -> 'Provider':
     with defer(cls.status.transition):
-      while not cls._queue.empty():
-        cls._semaphore.acquire()
-        item = cls._queue.get()
-        _, _, func, *args = item
-        future = cls._executor.submit(func, *args)
-        cls._futures.append(future)
+      while cls._qsize() > 0 or cls._fsize() > 0:
+        progress = f'Queue size: {cls._qsize()}, Future size: {cls._fsize()}, Pause: {cls._pause}'
+        ic(progress)
+        cls._futures = [future for future in cls._futures if not future.done()]
+        time.sleep(3)
 
-        cls._count += 1
-        if cls._count % 6 == 0:
-          cls._speedup()
-
-        time.sleep(cls._pause)
+      return cls
 
   @classmethod
   @logging()
@@ -116,6 +128,9 @@ class Provider:
   @retry()
   def _txn_exist(cls, url, address):
     with defer(cls._semaphore.release):
+      if Extracter.addresses()[address]:
+        return
+      
       if isinstance(result := try_get(url), Exception):
         cls._slowdown()
         raise result
@@ -140,15 +155,6 @@ class Provider:
         cls._slowdown()
         raise result
       cls.end_block = result
-
-  @classmethod
-  def _wait(cls) -> 'Provider':
-    while cls._qsize() > 0 or cls._fsize() > 0:
-      ic(f'Queue size: {cls._qsize()}, Future size: {cls._fsize()}, Pause: {cls._pause}')
-      cls._futures = [future for future in cls._futures if not future.done()]
-      time.sleep(3)
-
-    return cls
 
   @classmethod
   def init(cls) -> 'Provider':
@@ -195,7 +201,6 @@ class Provider:
           }
           url = build_url(params)
           cls._enqueue(priority, cls._get_txn, url)
-      
       return cls
 
   @classmethod
@@ -220,8 +225,8 @@ class Provider:
       return cls
   
   @classmethod
-  def print(cls, message) -> 'Provider':
-    ic(message)
+  def print(cls, provider) -> 'Provider':
+    ic(provider)
 
     return cls
   
